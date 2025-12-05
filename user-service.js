@@ -59,23 +59,27 @@ module.exports.registerUser = function (userData) {
 };
 
 module.exports.checkUser = function (userData) {
-    return new Promise(function (resolve, reject) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const user = await User.findOne({ userName: userData.userName }).exec();
 
-        User.findOne({ userName: userData.userName })
-            .exec()
-            .then(user => {
-                bcrypt.compare(userData.password, user.password).then(res => {
-                    if (res === true) {
-                        resolve(user);
-                    } else {
-                        reject("Incorrect password for user " + userData.userName);
-                    }
-                });
-            }).catch(err => {
-                reject("Unable to find user " + userData.userName);
-            });
+            if (!user) {
+                return reject(`Unable to find user ${userData.userName}`);
+            }
+
+            const passwordMatch = await bcrypt.compare(userData.password, user.password);
+
+            if (passwordMatch) {
+                resolve(user);
+            } else {
+                reject(`Incorrect password for user ${userData.userName}`);
+            }
+        } catch (err) {
+            reject(`Error checking user: ${err}`);
+        }
     });
 };
+
 
 module.exports.getFavourites = function (id) {
     return new Promise(function (resolve, reject) {
