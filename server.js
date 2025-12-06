@@ -29,6 +29,7 @@ passport.use(new JwtStrategy({
         });
 }));
 
+//Register
 app.post("/api/user/register", (req, res) => {
     userService.registerUser(req.body)
     .then((msg) => {
