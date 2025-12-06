@@ -9,6 +9,9 @@ const jwt = require('jsonwebtoken');
 const passport = require('passport');
 const passportJWT = require('passport-jwt');
 
+console.log('MONGO_URL:', process.env.MONGO_URL);
+console.log('JWT_SECRET:', process.env.JWT_SECRET);
+
 let ExtractJwt = passportJWT.ExtractJwt;
 let JwtStrategy = passportJWT.Strategy;
 
@@ -39,17 +42,6 @@ app.use(cors());
 app.use(passport.initialize());
 
 // ------------------ ROUTES ------------------
-
-// Test endpoint to print the MONGO_URL
-app.get('/api/test/mongo', (req, res) => {
-    const mongoUrl = process.env.MONGO_URL;
-    console.log("MONGO_URL received by server:", mongoUrl);
-    if (mongoUrl) {
-        res.json({ message: "MONGO_URL received", mongoUrl: mongoUrl });
-    } else {
-        res.status(500).json({ message: "MONGO_URL not set" });
-    }
-});
 
 // Register a new user
 app.post('/api/user/register', (req, res) => {
