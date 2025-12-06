@@ -1,4 +1,5 @@
 const express = require('express');
+const passport = require('passport'); 
 const app = express();
 const cors = require("cors");
 const dotenv = require("dotenv");
@@ -9,6 +10,24 @@ const HTTP_PORT = process.env.PORT || 8080;
 
 app.use(express.json());
 app.use(cors());
+
+// Import passport-jwt strategy
+const JwtStrategy = require('passport-jwt').Strategy;
+const ExtractJwt = require('passport-jwt').ExtractJwt;
+
+// Set up JWT authentication strategy
+passport.use(new JwtStrategy({
+    jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+    secretOrKey: process.env.JWT_SECRET
+}, (jwtPayload, done) => {
+    userService.getFavourites(jwtPayload._id) // You can validate the user here or just return the payload.
+        .then(() => {
+            return done(null, jwtPayload); // user found, pass user to req.user
+        })
+        .catch(err => {
+            return done(err, false);
+        });
+}));
 
 app.post("/api/user/register", (req, res) => {
     userService.registerUser(req.body)
