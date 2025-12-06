@@ -1,112 +1,129 @@
-const express = require('express');
-const app = express();
-const cors = require("cors");
-const dotenv = require("dotenv");
-dotenv.config();
-const userService = require("./user-service.js");
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
-const jwt = require("jsonwebtoken");
-const passport = require("passport");
-const passportJWT = require("passport-jwt");
+let mongoDBConnectionString = process.env.MONGO_URL;
 
-let ExtractJwt = passportJWT.ExtractJwt;
-let JwtStrategy = passportJWT.Strategy;
+let Schema = mongoose.Schema;
 
-let jwtOptions = {
-  jwtFromRequest: ExtractJwt.fromAuthHeaderWithScheme(),
-  secretOrKey: process.env.JWT_SECRET
+let userSchema = new Schema({
+    userName: {
+        type: String,
+        unique: true
+    },
+    password: String,
+    favourites: [String]
+});
+
+let User;
+
+module.exports.connect = function () {
+    return new Promise(function (resolve, reject) {
+        let db = mongoose.createConnection(mongoDBConnectionString);
+
+        db.on('error', err => {
+            reject(err);
+        });
+
+        db.once('open', () => {
+            User = db.model("users", userSchema);
+            resolve();
+        });
+    });
 };
 
-let strategy = new JwtStrategy(jwtOptions, (jwt_payload, next) => {
-  if (jwt_payload) {
-    next(null, {
-      _id: jwt_payload._id,
-      userName: jwt_payload.userName
+module.exports.registerUser = function (userData) {
+    return new Promise(function (resolve, reject) {
+
+        if (userData.password != userData.password2) {
+            reject("Passwords do not match");
+        } else {
+
+            bcrypt.hash(userData.password, 10).then(hash => {
+
+                userData.password = hash;
+
+                let newUser = new User(userData);
+
+                newUser.save().then(() => {
+                    resolve("User " + userData.userName + " successfully registered");  
+                }).catch(err => {
+                    if (err.code == 11000) {
+                        reject("User Name already taken");
+                    } else {
+                        reject("There was an error creating the user: " + err);
+                    }
+                })
+            }).catch(err => reject(err));
+        }
     });
-  } else {
-    next(null, false);
-  }
-});
+};
 
-passport.use(strategy);
+module.exports.checkUser = function (userData) {
+    return new Promise(function (resolve, reject) {
 
-const HTTP_PORT = process.env.PORT || 8080;
-
-app.use(express.json());
-app.use(cors());
-app.use(passport.initialize());
-
-app.post("/api/user/register", (req, res) => {
-  userService.registerUser(req.body)
-    .then((msg) => {
-      res.json({ message: msg });
-    })
-    .catch((msg) => {
-      res.status(422).json({ message: msg });
+        User.findOne({ userName: userData.userName })
+            .exec()
+            .then(user => {
+                bcrypt.compare(userData.password, user.password).then(res => {
+                    if (res === true) {
+                        resolve(user);
+                    } else {
+                        reject("Incorrect password for user " + userData.userName);
+                    }
+                });
+            }).catch(err => {
+                reject("Unable to find user " + userData.userName);
+            });
     });
-});
+};
 
-app.post("/api/user/login", (req, res) => {
-  userService.checkUser(req.body)
-    .then((user) => {
-      let payload = {
-        _id: user._id,
-        userName: user.userName
-      };
+module.exports.getFavourites = function (id) {
+    return new Promise(function (resolve, reject) {
 
-      let token = jwt.sign(payload, process.env.JWT_SECRET);
-
-      res.json({ message: "login successful", token: token });
-    })
-    .catch((msg) => {
-      res.status(422).json({ message: msg });
+        User.findById(id)
+            .exec()
+            .then(user => {
+                resolve(user.favourites)
+            }).catch(err => {
+                reject(`Unable to get favourites for user with id: ${id}`);
+            });
     });
-});
+}
 
-app.get("/api/user/favourites",
-  passport.authenticate('jwt', { session: false }),
-  (req, res) => {
-    userService.getFavourites(req.user._id)
-      .then(data => {
-        res.json(data);
-      })
-      .catch(msg => {
-        res.status(422).json({ error: msg });
-      });
-  }
-);
+module.exports.addFavourite = function (id, favId) {
 
-app.put("/api/user/favourites/:id",
-  passport.authenticate('jwt', { session: false }),
-  (req, res) => {
-    userService.addFavourite(req.user._id, req.params.id)
-      .then(data => {
-        res.json(data);
-      })
-      .catch(msg => {
-        res.status(422).json({ error: msg });
-      });
-  }
-);
+    return new Promise(function (resolve, reject) {
 
-app.delete("/api/user/favourites/:id",
-  passport.authenticate('jwt', { session: false }),
-  (req, res) => {
-    userService.removeFavourite(req.user._id, req.params.id)
-      .then(data => {
-        res.json(data);
-      })
-      .catch(msg => {
-        res.status(422).json({ error: msg });
-      });
-  }
-);
+        User.findById(id).exec().then(user => {
+            if (user.favourites.length < 50) {
+                User.findByIdAndUpdate(id,
+                    { $addToSet: { favourites: favId } },
+                    { new: true }
+                ).exec()
+                    .then(user => { resolve(user.favourites); })
+                    .catch(err => { reject(`Unable to update favourites for user with id: ${id}`); })
+            } else {
+                reject(`Unable to update favourites for user with id: ${id}`);
+            }
 
-userService.connect()
-  .then(() => {
-    app.listen(HTTP_PORT, () => { console.log("API listening on: " + HTTP_PORT) });
-  })
-  .catch((err) => {
-    console.log("unable to start the server: " + err);
-    process.exit();
-  });
+        })
+
+    });
+
+
+}
+
+module.exports.removeFavourite = function (id, favId) {
+    return new Promise(function (resolve, reject) {
+        User.findByIdAndUpdate(id,
+            { $pull: { favourites: favId } },
+            { new: true }
+        ).exec()
+            .then(user => {
+                resolve(user.favourites);
+            })
+            .catch(err => {
+                reject(`Unable to update favourites for user with id: ${id}`);
+            })
+    });
+}
